@@ -1,5 +1,22 @@
 const sqlite3 = require('sqlite3').verbose();
 const { config, logAndCache, badCrypto, totalRevenue } = require('./utils');
+const { dbGet, dbAll, dbRun } = require('./db');
+const { HttpError, orFail, asyncRoute } = require('./http');
+
+const SCHEMA = [
+    "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, pass TEXT)",
+    "CREATE TABLE courses (id INTEGER PRIMARY KEY, title TEXT, price REAL, active INTEGER)",
+    "CREATE TABLE enrollments (id INTEGER PRIMARY KEY, user_id INTEGER, course_id INTEGER)",
+    "CREATE TABLE payments (id INTEGER PRIMARY KEY, enrollment_id INTEGER, amount REAL, status TEXT)",
+    "CREATE TABLE audit_logs (id INTEGER PRIMARY KEY, action TEXT, created_at DATETIME)"
+];
+
+const SEED = [
+    "INSERT INTO users (name, email, pass) VALUES ('Leonan', 'leonan@fullcycle.com.br', '123')",
+    "INSERT INTO courses (title, price, active) VALUES ('Clean Architecture', 997.00, 1), ('Docker', 497.00, 1)",
+    "INSERT INTO enrollments (user_id, course_id) VALUES (1, 1)",
+    "INSERT INTO payments (enrollment_id, amount, status) VALUES (1, 997.00, 'PAID')"
+];
 
 class AppManager {
     constructor() {
@@ -9,23 +26,12 @@ class AppManager {
 
     initDb() {
         this.db.serialize(() => {
-            this.db.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, pass TEXT)");
-            this.db.run("CREATE TABLE courses (id INTEGER PRIMARY KEY, title TEXT, price REAL, active INTEGER)");
-            this.db.run("CREATE TABLE enrollments (id INTEGER PRIMARY KEY, user_id INTEGER, course_id INTEGER)");
-            this.db.run("CREATE TABLE payments (id INTEGER PRIMARY KEY, enrollment_id INTEGER, amount REAL, status TEXT)");
-            this.db.run("CREATE TABLE audit_logs (id INTEGER PRIMARY KEY, action TEXT, created_at DATETIME)");
-            
-            this.db.run("INSERT INTO users (name, email, pass) VALUES ('Leonan', 'leonan@fullcycle.com.br', '123')");
-            this.db.run("INSERT INTO courses (title, price, active) VALUES ('Clean Architecture', 997.00, 1), ('Docker', 497.00, 1)");
-            this.db.run("INSERT INTO enrollments (user_id, course_id) VALUES (1, 1)");
-            this.db.run("INSERT INTO payments (enrollment_id, amount, status) VALUES (1, 997.00, 'PAID')");
+            SCHEMA.concat(SEED).forEach((sql) => this.db.run(sql));
         });
     }
 
     setupRoutes(app) {
-        const self = this;
-
-        app.post('/api/checkout', (req, res) => {
+        app.post('/api/checkout', asyncRoute(async (req, res) => {
             let u = req.body.usr;
             let e = req.body.eml;
             let p = req.body.pwd;
@@ -34,107 +40,82 @@ class AppManager {
 
             if (!u || !e || !cid || !cc) return res.status(400).send("Bad Request");
 
-            this.db.get("SELECT * FROM courses WHERE id = ? AND active = 1", [cid], (err, course) => {
-                if (err || !course) return res.status(404).send("Curso não encontrado");
+            const course = await dbGet(this.db, "SELECT * FROM courses WHERE id = ? AND active = 1", [cid])
+                .catch(() => null);
+            if (!course) throw new HttpError(404, "Curso não encontrado");
 
-                this.db.get("SELECT id FROM users WHERE email = ?", [e], (err, user) => {
-                    if (err) return res.status(500).send("Erro DB");
+            const user = await orFail(
+                dbGet(this.db, "SELECT id FROM users WHERE email = ?", [e]),
+                500, "Erro DB"
+            );
 
-                    let processPaymentAndEnroll = (userId) => {
+            let userId;
+            if (!user) {
 
-                        console.log(`Processando cartão ${cc} na chave ${config.paymentGatewayKey}`);
-                        let status = cc.startsWith("4") ? "PAID" : "DENIED";
+                let hash = badCrypto(p || "123456");
+                userId = await orFail(
+                    dbRun(this.db, "INSERT INTO users (name, email, pass) VALUES (?, ?, ?)", [u, e, hash]),
+                    500, "Erro ao criar usuário"
+                );
+            } else {
+                userId = user.id;
+            }
 
-                        if (status === "DENIED") return res.status(400).send("Pagamento recusado");
+            console.log(`Processando cartão ${cc} na chave ${config.paymentGatewayKey}`);
+            let status = cc.startsWith("4") ? "PAID" : "DENIED";
 
-                        this.db.run("INSERT INTO enrollments (user_id, course_id) VALUES (?, ?)", [userId, cid], function(err) {
-                            if (err) return res.status(500).send("Erro Matrícula");
-                            let enrId = this.lastID;
+            if (status === "DENIED") return res.status(400).send("Pagamento recusado");
 
-                            self.db.run("INSERT INTO payments (enrollment_id, amount, status) VALUES (?, ?, ?)", [enrId, course.price, status], function(err) {
-                                if (err) return res.status(500).send("Erro Pagamento");
+            const enrId = await orFail(
+                dbRun(this.db, "INSERT INTO enrollments (user_id, course_id) VALUES (?, ?)", [userId, cid]),
+                500, "Erro Matrícula"
+            );
 
-                                self.db.run("INSERT INTO audit_logs (action, created_at) VALUES (?, datetime('now'))", [`Checkout curso ${cid} por ${userId}`], (err) => {
-                                    
-                                    logAndCache(`last_checkout_${userId}`, course.title);
-                                    res.status(200).json({ msg: "Sucesso", enrollment_id: enrId });
-                                });
-                            });
-                        });
-                    };
+            await orFail(
+                dbRun(this.db, "INSERT INTO payments (enrollment_id, amount, status) VALUES (?, ?, ?)",
+                    [enrId, course.price, status]),
+                500, "Erro Pagamento"
+            );
 
-                    if (!user) {
+            await dbRun(this.db, "INSERT INTO audit_logs (action, created_at) VALUES (?, datetime('now'))",
+                [`Checkout curso ${cid} por ${userId}`]).catch(() => null);
 
-                        let hash = badCrypto(p || "123456");
-                        this.db.run("INSERT INTO users (name, email, pass) VALUES (?, ?, ?)", [u, e, hash], function(err) {
-                            if (err) return res.status(500).send("Erro ao criar usuário");
-                            processPaymentAndEnroll(this.lastID);
-                        });
-                    } else {
-                        processPaymentAndEnroll(user.id);
+            logAndCache(`last_checkout_${userId}`, course.title);
+            res.status(200).json({ msg: "Sucesso", enrollment_id: enrId });
+        }));
+
+        app.get('/api/admin/financial-report', asyncRoute(async (req, res) => {
+            const courses = await orFail(dbAll(this.db, "SELECT * FROM courses"), 500, "Erro DB");
+
+            const report = [];
+            for (const c of courses) {
+                const courseData = { course: c.title, revenue: 0, students: [] };
+                const enrollments = await dbAll(this.db, "SELECT * FROM enrollments WHERE course_id = ?", [c.id]);
+
+                for (const enr of enrollments) {
+                    const user = await dbGet(this.db, "SELECT name, email FROM users WHERE id = ?", [enr.user_id]);
+                    const payment = await dbGet(this.db, "SELECT amount, status FROM payments WHERE enrollment_id = ?", [enr.id]);
+
+                    if (payment && payment.status === 'PAID') {
+                        courseData.revenue += payment.amount;
                     }
-                });
-            });
-        });
 
-        app.get('/api/admin/financial-report', (req, res) => {
-            let report = [];
-
-            this.db.all("SELECT * FROM courses", [], (err, courses) => {
-                if (err) return res.status(500).send("Erro DB");
-                
-                let coursesPending = courses.length;
-                if (coursesPending === 0) return res.json(report);
-
-                courses.forEach(c => {
-                    let courseData = { course: c.title, revenue: 0, students: [] };
-                    
-                    this.db.all("SELECT * FROM enrollments WHERE course_id = ?", [c.id], (err, enrollments) => {
-                        let enrPending = enrollments.length;
-                        
-                        if (enrPending === 0) {
-                            report.push(courseData);
-                            coursesPending--;
-                            if (coursesPending === 0) res.json(report);
-                            return;
-                        }
-
-                        enrollments.forEach(enr => {
-
-                            this.db.get("SELECT name, email FROM users WHERE id = ?", [enr.user_id], (err, user) => {
-                                
-                                this.db.get("SELECT amount, status FROM payments WHERE enrollment_id = ?", [enr.id], (err, payment) => {
-                                    
-                                    if (payment && payment.status === 'PAID') {
-                                        courseData.revenue += payment.amount;
-                                    }
-                                    
-                                    courseData.students.push({
-                                        student: user ? user.name : 'Unknown',
-                                        paid: payment ? payment.amount : 0
-                                    });
-
-                                    enrPending--;
-                                    if (enrPending === 0) {
-                                        report.push(courseData);
-                                        coursesPending--;
-                                        if (coursesPending === 0) res.json(report);
-                                    }
-                                });
-                            });
-                        });
+                    courseData.students.push({
+                        student: user ? user.name : 'Unknown',
+                        paid: payment ? payment.amount : 0
                     });
-                });
-            });
-        });
+                }
 
-        app.delete('/api/users/:id', (req, res) => {
-            let id = req.params.id;
-            this.db.run("DELETE FROM users WHERE id = ?", [id], (err) => {
+                report.push(courseData);
+            }
 
-                res.send("Usuário deletado, mas as matrículas e pagamentos ficaram sujos no banco.");
-            });
-        });
+            res.json(report);
+        }));
+
+        app.delete('/api/users/:id', asyncRoute(async (req, res) => {
+            await dbRun(this.db, "DELETE FROM users WHERE id = ?", [req.params.id]).catch(() => null);
+            res.send("Usuário deletado, mas as matrículas e pagamentos ficaram sujos no banco.");
+        }));
     }
 }
 
