@@ -11,3 +11,13 @@ python app.py
 ```
 
 A aplicação sobe em `http://localhost:5000`. O `seed.py` popula o banco SQLite (`tasks.db`) com usuários, categorias e tasks de exemplo — **rode-o antes do primeiro boot**, caso contrário os endpoints vão retornar listas vazias.
+
+## Testes
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+`pytest` já roda com cobertura (`--cov`). Os testes de models, routes, services e helpers usam SQLite em memória; os smoke tests de `app.py`/`seed.py` criam e apagam `instance/tasks.db`.
+

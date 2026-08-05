@@ -12,3 +12,14 @@ npm start
 A aplicação sobe em `http://localhost:3000`. O banco SQLite é em memória e já carrega seeds automaticamente no boot.
 
 Exemplos de requisições estão em `api.http`.
+
+## Testes
+
+```bash
+npm install
+npm test
+npm run test:coverage
+```
+
+Os testes usam Jest e supertest, com o banco SQLite em memória recriado a cada teste.
+

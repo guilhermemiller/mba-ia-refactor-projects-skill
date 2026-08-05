@@ -10,3 +10,8 @@ venv/
 # SQLite
 *.db
 instance/
+
+# Test artifacts
+.coverage
+coverage/
+.pytest_cache/
