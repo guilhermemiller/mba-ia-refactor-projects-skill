@@ -3,9 +3,10 @@ from database import db
 from models.user import User
 from models.task import Task
 from datetime import datetime
-import hashlib, json, re
+import hashlib, json, logging, re
 
 user_bp = Blueprint('users', __name__)
+logger = logging.getLogger(__name__)
 
 @user_bp.route('/users', methods=['GET'])
 def get_users():
@@ -77,17 +78,11 @@ def create_user():
     user.set_password(password)
     user.role = role
 
-    try:
-        db.session.add(user)
-        db.session.commit()
-        print(f"Usuário criado: {user.id} - {user.name}")
+    db.session.add(user)
+    db.session.commit()
+    logger.info('Usuário criado: %s - %s', user.id, user.name)
 
-        response_data = user.to_dict()
-        return jsonify(response_data), 201
-    except Exception as e:
-        db.session.rollback()
-        print(f"ERRO: {str(e)}")
-        return jsonify({'error': 'Erro ao criar usuário'}), 500
+    return jsonify(user.to_dict()), 201
 
 @user_bp.route('/users/<int:user_id>', methods=['PUT'])
 def update_user(user_id):
@@ -124,12 +119,8 @@ def update_user(user_id):
     if 'active' in data:
         user.active = data['active']
 
-    try:
-        db.session.commit()
-        return jsonify(user.to_dict()), 200
-    except:
-        db.session.rollback()
-        return jsonify({'error': 'Erro ao atualizar'}), 500
+    db.session.commit()
+    return jsonify(user.to_dict()), 200
 
 @user_bp.route('/users/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
@@ -141,14 +132,10 @@ def delete_user(user_id):
     for t in tasks:
         db.session.delete(t)
 
-    try:
-        db.session.delete(user)
-        db.session.commit()
-        print(f"Usuário deletado: {user_id}")
-        return jsonify({'message': 'Usuário deletado com sucesso'}), 200
-    except:
-        db.session.rollback()
-        return jsonify({'error': 'Erro ao deletar'}), 500
+    db.session.delete(user)
+    db.session.commit()
+    logger.info('Usuário deletado: %s', user_id)
+    return jsonify({'message': 'Usuário deletado com sucesso'}), 200
 
 @user_bp.route('/users/<int:user_id>/tasks', methods=['GET'])
 def get_user_tasks(user_id):

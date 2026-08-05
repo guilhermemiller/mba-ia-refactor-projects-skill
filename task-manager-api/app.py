@@ -1,10 +1,14 @@
 from flask import Flask
 from flask_cors import CORS
 from database import db
+from error_handlers import register_error_handlers
 from routes.task_routes import task_bp
 from routes.user_routes import user_bp
 from routes.report_routes import report_bp
+import logging
 import os, sys, json, datetime
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
 
 app = Flask(__name__)
 
@@ -18,6 +22,8 @@ db.init_app(app)
 app.register_blueprint(task_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(report_bp)
+
+register_error_handlers(app)
 
 @app.route('/health')
 def health():

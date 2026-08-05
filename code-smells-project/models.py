@@ -1,5 +1,9 @@
+import logging
+
 from database import get_db
 import sqlite3
+
+logger = logging.getLogger(__name__)
 
 def get_todos_produtos():
     db = get_db()
@@ -145,27 +149,33 @@ def criar_pedido(usuario_id, itens):
             return {"erro": "Estoque insuficiente para " + produto["nome"]}
         total = total + (produto["preco"] * item["quantidade"])
 
-    cursor.execute(
-        "INSERT INTO pedidos (usuario_id, status, total) VALUES (" +
-        str(usuario_id) + ", 'pendente', " + str(total) + ")"
-    )
-    pedido_id = cursor.lastrowid
-
-    for item in itens:
-        cursor.execute("SELECT preco FROM produtos WHERE id = " + str(item["produto_id"]))
-        produto = cursor.fetchone()
+    try:
         cursor.execute(
-            "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (" +
-            str(pedido_id) + ", " + str(item["produto_id"]) + ", " +
-            str(item["quantidade"]) + ", " + str(produto["preco"]) + ")"
+            "INSERT INTO pedidos (usuario_id, status, total) VALUES (" +
+            str(usuario_id) + ", 'pendente', " + str(total) + ")"
         )
+        pedido_id = cursor.lastrowid
 
-        cursor.execute(
-            "UPDATE produtos SET estoque = estoque - " + str(item["quantidade"]) +
-            " WHERE id = " + str(item["produto_id"])
-        )
+        for item in itens:
+            cursor.execute("SELECT preco FROM produtos WHERE id = " + str(item["produto_id"]))
+            produto = cursor.fetchone()
+            cursor.execute(
+                "INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (" +
+                str(pedido_id) + ", " + str(item["produto_id"]) + ", " +
+                str(item["quantidade"]) + ", " + str(produto["preco"]) + ")"
+            )
 
-    db.commit()
+            cursor.execute(
+                "UPDATE produtos SET estoque = estoque - " + str(item["quantidade"]) +
+                " WHERE id = " + str(item["produto_id"])
+            )
+
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        logger.exception("Falha ao criar pedido do usuario %s; transação revertida", usuario_id)
+        raise
+
     return {"pedido_id": pedido_id, "total": total}
 
 def get_pedidos_usuario(usuario_id):

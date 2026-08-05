@@ -40,14 +40,15 @@ def log_action(action, details=None):
     if details:
         print(f"  DETAILS: {details}")
 
+SUPPORTED_DATE_FORMATS = ('%Y-%m-%d', '%d/%m/%Y')
+
 def parse_date(date_string):
-    try:
-        return datetime.strptime(date_string, '%Y-%m-%d')
-    except:
+    for date_format in SUPPORTED_DATE_FORMATS:
         try:
-            return datetime.strptime(date_string, '%d/%m/%Y')
-        except:
-            return None
+            return datetime.strptime(date_string, date_format)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 def is_valid_color(color):
     if color and len(color) == 7 and color[0] == '#':
@@ -81,12 +82,13 @@ def process_task_data(data, existing_task=None):
     if 'priority' in data:
         try:
             p = int(data['priority'])
-            if p >= 1 and p <= 5:
-                result['priority'] = p
-            else:
-                return None, 'Prioridade deve ser entre 1 e 5'
-        except:
+        except (TypeError, ValueError):
             return None, 'Prioridade inválida'
+
+        if p >= 1 and p <= 5:
+            result['priority'] = p
+        else:
+            return None, 'Prioridade deve ser entre 1 e 5'
 
     if 'due_date' in data:
         if data['due_date']:

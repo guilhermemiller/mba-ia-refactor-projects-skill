@@ -179,13 +179,9 @@ def create_category():
     category.description = data.get('description', '')
     category.color = data.get('color', '#000000')
 
-    try:
-        db.session.add(category)
-        db.session.commit()
-        return jsonify(category.to_dict()), 201
-    except:
-        db.session.rollback()
-        return jsonify({'error': 'Erro ao criar categoria'}), 500
+    db.session.add(category)
+    db.session.commit()
+    return jsonify(category.to_dict()), 201
 
 @report_bp.route('/categories/<int:cat_id>', methods=['PUT'])
 def update_category(cat_id):
@@ -193,7 +189,10 @@ def update_category(cat_id):
     if not cat:
         return jsonify({'error': 'Categoria não encontrada'}), 404
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'Dados inválidos'}), 400
+
     if 'name' in data:
         cat.name = data['name']
     if 'description' in data:
@@ -201,12 +200,8 @@ def update_category(cat_id):
     if 'color' in data:
         cat.color = data['color']
 
-    try:
-        db.session.commit()
-        return jsonify(cat.to_dict()), 200
-    except:
-        db.session.rollback()
-        return jsonify({'error': 'Erro ao atualizar'}), 500
+    db.session.commit()
+    return jsonify(cat.to_dict()), 200
 
 @report_bp.route('/categories/<int:cat_id>', methods=['DELETE'])
 def delete_category(cat_id):
@@ -214,10 +209,6 @@ def delete_category(cat_id):
     if not cat:
         return jsonify({'error': 'Categoria não encontrada'}), 404
 
-    try:
-        db.session.delete(cat)
-        db.session.commit()
-        return jsonify({'message': 'Categoria deletada'}), 200
-    except:
-        db.session.rollback()
-        return jsonify({'error': 'Erro ao deletar'}), 500
+    db.session.delete(cat)
+    db.session.commit()
+    return jsonify({'message': 'Categoria deletada'}), 200

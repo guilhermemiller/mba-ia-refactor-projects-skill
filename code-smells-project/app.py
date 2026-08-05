@@ -1,12 +1,20 @@
+import logging
+import sqlite3
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import controllers
 from database import get_db
+from error_handlers import register_error_handlers
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "minha-chave-super-secreta-123"
 app.config["DEBUG"] = True
 CORS(app)
+register_error_handlers(app)
 
 app.add_url_rule("/produtos", "listar_produtos", controllers.listar_produtos, methods=["GET"])
 app.add_url_rule("/produtos/busca", "buscar_produtos", controllers.buscar_produtos, methods=["GET"])
@@ -48,17 +56,25 @@ def index():
 def reset_database():
     db = get_db()
     cursor = db.cursor()
-    cursor.execute("DELETE FROM itens_pedido")
-    cursor.execute("DELETE FROM pedidos")
-    cursor.execute("DELETE FROM produtos")
-    cursor.execute("DELETE FROM usuarios")
-    db.commit()
-    print("!!! BANCO DE DADOS RESETADO !!!")
+    try:
+        cursor.execute("DELETE FROM itens_pedido")
+        cursor.execute("DELETE FROM pedidos")
+        cursor.execute("DELETE FROM produtos")
+        cursor.execute("DELETE FROM usuarios")
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        logger.exception("Falha ao resetar o banco de dados")
+        raise
+    logger.warning("!!! BANCO DE DADOS RESETADO !!!")
     return jsonify({"mensagem": "Banco de dados resetado", "sucesso": True}), 200
 
 @app.route("/admin/query", methods=["POST"])
 def executar_query():
-    dados = request.get_json()
+    dados = request.get_json(silent=True)
+    if not dados:
+        return jsonify({"erro": "Dados inválidos"}), 400
+
     query = dados.get("sql", "")
     if not query:
         return jsonify({"erro": "Query não informada"}), 400
@@ -74,15 +90,14 @@ def executar_query():
         else:
             db.commit()
             return jsonify({"mensagem": "Query executada", "sucesso": True}), 200
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+    except sqlite3.Error:
+        db.rollback()
+        logger.exception("Falha ao executar query administrativa")
+        raise
 
 if __name__ == "__main__":
 
     get_db()
-    print("=" * 50)
-    print("SERVIDOR INICIADO")
-    print("Rodando em http://localhost:5000")
-    print("=" * 50)
+    logger.info("SERVIDOR INICIADO - rodando em http://localhost:5000")
 
     app.run(host="0.0.0.0", port=5000, debug=True)
