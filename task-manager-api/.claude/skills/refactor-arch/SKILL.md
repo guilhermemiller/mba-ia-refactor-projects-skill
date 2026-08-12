@@ -83,3 +83,7 @@ A resposta da Fase 2 deve terminar com:
 - Use os arquivos de referência para todas as decisões.
 - Priorize segurança, separação de responsabilidades e manutenção.
 - Se não for possível validar a aplicação completamente, explique claramente o motivo no final.
+
+## Regra de Ouro (Fase 3 vs Fase 2)
+- **TODA** falha ou vulnerabilidade apontada no relatório da Fase 2, incluindo achados em scripts de mock, seeds ou tokens falsos (Fake JWT), **DEVE** ser ativamente corrigida no código durante a Fase 3.
+- Não deixe pendências descritas no relatório vazarem para o código final. Verifique duplamente: senhas no banco (seeds inclusive) e tokens (devem ser JWTs assinados de verdade, não placeholders).

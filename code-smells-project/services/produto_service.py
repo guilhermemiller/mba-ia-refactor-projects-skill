@@ -62,3 +62,5 @@ def listar():
 
 def buscar(termo, categoria, preco_min, preco_max):
     return produto_model.buscar_produtos_por_filtro(termo, categoria, preco_min, preco_max)
+def obter(produto_id):
+    return produto_model.get_produto_por_id(produto_id)

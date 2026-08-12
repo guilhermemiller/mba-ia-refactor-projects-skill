@@ -28,7 +28,9 @@ function getDb() {
 
 function seed() {
     const database = getDb();
-    database.run("INSERT OR IGNORE INTO users (id, name, email, pass) VALUES (1, 'Leonan', 'leonan@fullcycle.com.br', '123')");
+    const { hashPassword } = require('../utils/security');
+    const hashedPass = hashPassword('123');
+    database.run("INSERT OR IGNORE INTO users (id, name, email, pass) VALUES (1, 'Leonan', 'leonan@fullcycle.com.br', ?)", [hashedPass]);
     database.run("INSERT OR IGNORE INTO courses (title, price, active) VALUES ('Clean Architecture', 997.00, 1), ('Docker', 497.00, 1)");
     database.run("INSERT OR IGNORE INTO enrollments (user_id, course_id) VALUES (1, 1)");
     database.run("INSERT OR IGNORE INTO payments (enrollment_id, amount, status) VALUES (1, 997.00, 'PAID')");
