@@ -146,3 +146,24 @@ async function handleCheckout(req, res) {
 - Associe cada finding do catálogo a uma transformação.
 - Aplique mudanças incrementais e mantenha a aplicação funcional.
 - Priorize correções de segurança e separação de responsabilidades.
+
+## 9. Plaintext Passwords in Seeds/Defaults
+Antes:
+- `db.run("INSERT INTO users (pass) VALUES ('123')")`
+- `u1.password = '1234'` sem hash.
+
+Depois:
+- Os seeds **devem** obrigatoriamente usar a mesma função de hash (ex: `bcrypt.hashSync`, `generate_password_hash`) usada pelo sistema.
+- Node.js: `const pwd = bcrypt.hashSync('123', 10); db.run("... VALUES (?)", [pwd])`
+- Python: `u1.set_password('1234')` garantindo que o método de fato faça o hash no banco.
+
+## 10. Fake / Unsigned JWTs
+Antes:
+- `token = "jwt-demo-" + str(user.id)`
+- Rota que ignora validação de assinatura e confia na string.
+
+Depois:
+- Gerar JWTs reais assinados usando a `SECRET_KEY` da aplicação.
+- Node.js: usar `jsonwebtoken` (`jwt.sign(payload, SECRET_KEY)`).
+- Python: usar `PyJWT` (`jwt.encode(payload, SECRET_KEY, algorithm="HS256")`).
+- Ao verificar requisições, garantir que a assinatura do JWT seja validada.

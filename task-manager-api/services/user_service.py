@@ -119,6 +119,9 @@ def get_user_tasks(user_id):
 
 
 def login(email, password):
+    import jwt
+    import datetime
+
     if not email or not password:
         raise UserServiceError("Email e senha são obrigatórios", 400)
     user = User.query.filter_by(email=email).first()
@@ -126,11 +129,17 @@ def login(email, password):
         raise UserServiceError("Credenciais inválidas", 401)
     if not user.active:
         raise UserServiceError("Usuário inativo", 403)
-    # Token de demonstração — em produção usar JWT assinado (cast).
+
+    payload = {
+        'user_id': user.id,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+
     return {
         "message": "Login realizado com sucesso",
         "user": user.to_dict(),
-        "token": "jwt-demo-" + str(user.id),
+        "token": token,
     }
 
 
